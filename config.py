@@ -22,22 +22,19 @@ AD_WAIT_SECONDS = int(os.environ.get("AD_WAIT_SECONDS", "15"))
 # independently (different salt), so the same user+video doesn't necessarily
 # land on the "matching" link index for both tasks.
 TASK1_AD_LINKS = [
-    "https://omg10.com/4/11903448",
-    "https://omg10.com/4/11903442",
-    "https://omg10.com/4/11903389",
-    "https://omg10.com/4/11903443",
+    "https://auctionr.org/4/1b46c719a87f7cf5f18ae59d8aa2a2f1",
+    "https://auctionr.org/4/4783679bb3f92df146f36ac8c524389c",
+    "https://auctionr.org/4/704548d464ffd9cdc3d20a21f95d56f4",
 ]
 TASK2_AD_LINKS = [
-    "https://www.profitableratecpmnetwork.com/m46hsu0sau?key=3b1bd3ee288ce3133c8d2cfd128b6dab",
-    "https://www.profitableratecpmnetwork.com/z1k6iwpp0f?key=035a41f483a78e2b618a5fb4b833a20c",
-    "https://www.profitableratecpmnetwork.com/wtg129p0m1?key=0d5ce0347cfa5d34808d2a09ed6a8a0f",
-    "https://www.profitableratecpmnetwork.com/zxqbtdpgt?key=f05f9d4968d095723c7b61b3fddf2870",
+    "https://auctionr.org/4/1b46c719a87f7cf5f18ae59d8aa2a2f1",
+    "https://auctionr.org/4/4783679bb3f92df146f36ac8c524389c",
+    "https://auctionr.org/4/704548d464ffd9cdc3d20a21f95d56f4",
 ]
 DIRECT_AD_LINKS_2 = [
-    "https://www.profitableratecpmnetwork.com/m46hsu0sau?key=3b1bd3ee288ce3133c8d2cfd128b6dab",
-    "https://www.profitableratecpmnetwork.com/z1k6iwpp0f?key=035a41f483a78e2b618a5fb4b833a20c",
-    "https://www.profitableratecpmnetwork.com/wtg129p0m1?key=0d5ce0347cfa5d34808d2a09ed6a8a0f",
-    "https://www.profitableratecpmnetwork.com/zxqbtdpgt?key=f05f9d4968d095723c7b61b3fddf2870",
+    "https://auctionr.org/4/1b46c719a87f7cf5f18ae59d8aa2a2f1",
+    "https://auctionr.org/4/4783679bb3f92df146f36ac8c524389c",
+    "https://auctionr.org/4/704548d464ffd9cdc3d20a21f95d56f4",
 ]
 # After a user completes both ad tasks and downloads a video, that specific
 # video becomes LOCKED (re-download blocked) for this many seconds. Once it
