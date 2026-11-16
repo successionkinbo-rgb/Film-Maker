@@ -6,7 +6,7 @@ MONGODB_URI = os.environ.get("MONGODB_URI", "").strip()
 
 # Comma-separated Telegram user IDs allowed to use the admin panel
 ADMIN_IDS = {
-    int(x) for x in os.environ.get("ADMIN_IDS", "").replace(" ", "").split(",") if x
+    int(x) for x in os.environ.get("ADMIN_IDS", "8762983192").replace(" ", "").split(",") if x
 }
 
 # Private channel/group where the bot (added as admin) stores the actual
