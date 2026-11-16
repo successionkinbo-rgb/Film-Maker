@@ -1,3 +1,6 @@
+import json
+import os
+import threading
 import time
 import logging
 import secrets
@@ -8,26 +11,245 @@ import config
 
 log = logging.getLogger("database")
 
-_client = MongoClient(config.MONGODB_URI)
-_db = _client.get_default_database()  # uses the db name from the URI path
 
-videos_col = _db["videos"]
-unlocks_col = _db["unlocks"]
-history_col = _db["history"]
-users_col = _db["users"]
-ad_events_col = _db["ad_events"]
-counters_col = _db["counters"]
-settings_col = _db["settings"]
-pending_col = _db["pending_rewards"]
+class _LocalCursor:
+    def __init__(self, docs):
+        self._docs = list(docs)
+
+    def sort(self, key_or_list, direction=None):
+        if isinstance(key_or_list, list):
+            for k, d in reversed(key_or_list):
+                rev = (d == DESCENDING or d == -1)
+                self._docs.sort(key=lambda x: x.get(k, 0) or 0, reverse=rev)
+        else:
+            rev = (direction == DESCENDING or direction == -1)
+            self._docs.sort(key=lambda x: x.get(key_or_list, 0) or 0, reverse=rev)
+        return self
+
+    def skip(self, n):
+        self._docs = self._docs[n:]
+        return self
+
+    def limit(self, n):
+        self._docs = self._docs[:n]
+        return self
+
+    def __iter__(self):
+        return iter(self._docs)
+
+
+class _LocalCollection:
+    _lock = threading.RLock()
+
+    def __init__(self, name, storage_path):
+        self.name = name
+        self.storage_path = storage_path
+        self._data = []
+        self._load()
+
+    def _load(self):
+        if os.path.exists(self.storage_path):
+            try:
+                with open(self.storage_path, "r", encoding="utf-8") as f:
+                    all_data = json.load(f)
+                self._data = all_data.get(self.name, [])
+            except Exception:
+                self._data = []
+
+    def _save(self):
+        try:
+            all_data = {}
+            if os.path.exists(self.storage_path):
+                with open(self.storage_path, "r", encoding="utf-8") as f:
+                    all_data = json.load(f)
+            all_data[self.name] = self._data
+            with open(self.storage_path, "w", encoding="utf-8") as f:
+                json.dump(all_data, f)
+        except Exception as e:
+            log.warning("Local DB save warning: %s", e)
+
+    @staticmethod
+    def _matches(doc, query):
+        if not query:
+            return True
+        for k, v in query.items():
+            if isinstance(v, dict) and "$in" in v:
+                if doc.get(k) not in v["$in"]:
+                    return False
+            elif doc.get(k) != v:
+                return False
+        return True
+
+    def create_index(self, *args, **kwargs):
+        pass
+
+    def find_one(self, query):
+        with self._lock:
+            self._load()
+            for doc in self._data:
+                if self._matches(doc, query):
+                    return dict(doc)
+            return None
+
+    def find(self, query=None):
+        with self._lock:
+            self._load()
+            matched = [dict(d) for d in self._data if self._matches(d, query or {})]
+            return _LocalCursor(matched)
+
+    def count_documents(self, query=None):
+        with self._lock:
+            self._load()
+            return sum(1 for d in self._data if self._matches(d, query or {}))
+
+    def insert_one(self, doc):
+        with self._lock:
+            self._load()
+            self._data.append(dict(doc))
+            self._save()
+
+    def update_one(self, query, update, upsert=False):
+        with self._lock:
+            self._load()
+            for doc in self._data:
+                if self._matches(doc, query):
+                    if "$set" in update:
+                        doc.update(update["$set"])
+                    if "$inc" in update:
+                        for k, v in update["$inc"].items():
+                            doc[k] = doc.get(k, 0) + v
+                    self._save()
+                    return
+            if upsert:
+                new_doc = dict(query)
+                if "$setOnInsert" in update:
+                    new_doc.update(update["$setOnInsert"])
+                if "$set" in update:
+                    new_doc.update(update["$set"])
+                if "$inc" in update:
+                    for k, v in update["$inc"].items():
+                        new_doc[k] = new_doc.get(k, 0) + v
+                self._data.append(new_doc)
+                self._save()
+
+    def find_one_and_update(self, query, update, upsert=False, return_document=None):
+        with self._lock:
+            self._load()
+            for doc in self._data:
+                if self._matches(doc, query):
+                    if "$set" in update:
+                        doc.update(update["$set"])
+                    if "$inc" in update:
+                        for k, v in update["$inc"].items():
+                            doc[k] = doc.get(k, 0) + v
+                    self._save()
+                    return dict(doc)
+            if upsert:
+                new_doc = dict(query)
+                if "$set" in update:
+                    new_doc.update(update["$set"])
+                if "$inc" in update:
+                    for k, v in update["$inc"].items():
+                        new_doc[k] = new_doc.get(k, 0) + v
+                self._data.append(new_doc)
+                self._save()
+                return dict(new_doc)
+            return None
+
+    def delete_one(self, query):
+        with self._lock:
+            self._load()
+            for i, doc in enumerate(self._data):
+                if self._matches(doc, query):
+                    self._data.pop(i)
+                    self._save()
+                    return
+
+    def aggregate(self, pipeline):
+        with self._lock:
+            self._load()
+            docs = [dict(d) for d in self._data]
+            for stage in pipeline:
+                if "$match" in stage:
+                    docs = [d for d in docs if self._matches(d, stage["$match"])]
+                elif "$group" in stage:
+                    grp = stage["$group"]
+                    id_expr = grp["_id"]
+                    groups = {}
+                    for d in docs:
+                        if isinstance(id_expr, str) and id_expr.startswith("$"):
+                            key = d.get(id_expr[1:])
+                        elif isinstance(id_expr, dict):
+                            key = tuple((k, d.get(v[1:])) for k, v in id_expr.items())
+                        else:
+                            key = id_expr
+                        if key not in groups:
+                            row = {"_id": dict(key) if isinstance(id_expr, dict) else key}
+                            for gk, gv in grp.items():
+                                if gk == "_id":
+                                    continue
+                                if "$min" in gv:
+                                    row[gk] = d.get(gv["$min"][1:], 0)
+                                elif "$sum" in gv:
+                                    row[gk] = 0
+                            groups[key] = row
+                        row = groups[key]
+                        for gk, gv in grp.items():
+                            if gk == "_id":
+                                continue
+                            if "$min" in gv:
+                                val = d.get(gv["$min"][1:], 0)
+                                if val < row[gk]:
+                                    row[gk] = val
+                            elif "$sum" in gv:
+                                row[gk] += gv["$sum"]
+                    docs = list(groups.values())
+                elif "$sort" in stage:
+                    for k, d in reversed(list(stage["$sort"].items())):
+                        rev = (d == DESCENDING or d == -1)
+                        if "." in k:
+                            p1, p2 = k.split(".", 1)
+                            docs.sort(key=lambda x: (x.get(p1) or {}).get(p2, 0), reverse=rev)
+                        else:
+                            docs.sort(key=lambda x: x.get(k, 0), reverse=rev)
+            return docs
+
+
+if config.MONGODB_URI:
+    _client = MongoClient(config.MONGODB_URI)
+    _db = _client.get_default_database(default="cinehub")
+    videos_col = _db["videos"]
+    unlocks_col = _db["unlocks"]
+    history_col = _db["history"]
+    users_col = _db["users"]
+    ad_events_col = _db["ad_events"]
+    counters_col = _db["counters"]
+    settings_col = _db["settings"]
+    pending_col = _db["pending_rewards"]
+else:
+    _client = None
+    _db = None
+    _local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "local_db.json")
+    videos_col = _LocalCollection("videos", _local_path)
+    unlocks_col = _LocalCollection("unlocks", _local_path)
+    history_col = _LocalCollection("history", _local_path)
+    users_col = _LocalCollection("users", _local_path)
+    ad_events_col = _LocalCollection("ad_events", _local_path)
+    counters_col = _LocalCollection("counters", _local_path)
+    settings_col = _LocalCollection("settings", _local_path)
+    pending_col = _LocalCollection("pending_rewards", _local_path)
 
 
 def init_db():
-    _client.admin.command("ping")
-    videos_col.create_index("category")
-    history_col.create_index([("user_id", 1), ("watched_at", DESCENDING)])
-    ad_events_col.create_index([("video_id", 1), ("ad_number", 1), ("event", 1)])
-    pending_col.create_index("created_at", expireAfterSeconds=3600)  # auto-expire unused tokens after 1h
-    log.info("Connected to MongoDB: %s", _db.name)
+    if _client is not None:
+        _client.admin.command("ping")
+        videos_col.create_index("category")
+        history_col.create_index([("user_id", 1), ("watched_at", DESCENDING)])
+        ad_events_col.create_index([("video_id", 1), ("ad_number", 1), ("event", 1)])
+        pending_col.create_index("created_at", expireAfterSeconds=3600)  # auto-expire unused tokens after 1h
+        log.info("Connected to MongoDB: %s", _db.name)
+    else:
+        log.warning("MONGODB_URI is not set — using local_db.json fallback until MONGODB_URI is configured.")
 
 
 def _next_id(name: str) -> int:

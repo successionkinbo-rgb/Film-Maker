@@ -617,8 +617,11 @@ async def delvideo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= MAIN =================
 
 def main():
-    db.init_db()
     start_keepalive()
+    try:
+        db.init_db()
+    except Exception as e:
+        log.error("Database init warning: %s", e)
     # explicit event loop for the main thread — newer Python (3.12+/3.14)
     # no longer auto-creates one, which python-telegram-bot's run_polling relies on
     asyncio.set_event_loop(asyncio.new_event_loop())
@@ -675,6 +678,7 @@ def main():
     while True:
         try:
             log.info("Bot starting (polling)...")
+            asyncio.set_event_loop(asyncio.new_event_loop())
             app.run_polling(drop_pending_updates=True, close_loop=False)
             break  # run_polling returned normally (clean shutdown)
         except Conflict:
@@ -688,6 +692,9 @@ def main():
         except NetworkError as e:
             log.warning("Network error (%s), retrying in %ss", e, retry_delay)
             time.sleep(retry_delay)
+        except Exception as e:
+            log.error("Bot polling error (%s), retrying in 15s...", e)
+            time.sleep(15)
 
 
 if __name__ == "__main__":

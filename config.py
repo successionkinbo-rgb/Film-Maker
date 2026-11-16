@@ -1,13 +1,8 @@
 import os
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "PUT_YOUR_BOT_TOKEN_HERE")
-MONGODB_URI = os.environ.get("MONGODB_URI", "")
+MONGODB_URI = os.environ.get("MONGODB_URI", "").strip()
 
-if not MONGODB_URI:
-    raise RuntimeError(
-        "MONGODB_URI environment variable is not set. Set it in Render's "
-        "Environment tab (never commit it to git)."
-    )
 
 # Comma-separated Telegram user IDs allowed to use the admin panel
 ADMIN_IDS = {
