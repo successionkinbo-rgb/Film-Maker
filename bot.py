@@ -67,7 +67,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # the chat message is just a short description + launch buttons.
         text = (
             f"👋 Hi {user.first_name}!\n\n"
-            "🎬 <b>Cine Hub</b> — Movie, Natok, Series, Drama সব একসাথে, "
+            "🎬 <b>Film Maker</b> — Movie, Natok, Series, Drama সব একসাথে, "
             "premium app interface-এ দেখুন।\n\n"
             "নিচের 🎬 Watch Now বাটনে চাপ দিয়ে Video Download করুন📱"
         )
