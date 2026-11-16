@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Cine Hub</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="/app/style.css">
+</head>
+<body>
+
+<div id="webBlockOverlay" class="web-block hidden">
+  <div class="web-block-card">
+    <div class="web-block-icon">📱</div>
+    <h2>শুধু Telegram App-এ খুলুন</h2>
+    <p>এই অ্যাপ শুধুমাত্র Telegram-এর <b>Android/iOS মোবাইল অ্যাপ</b>-এ কাজ করে। Telegram Web, Telegram Desktop, বা সাধারণ ব্রাউজার থেকে এটি খোলা যাবে না। দয়া করে Telegram মোবাইল অ্যাপে এটি খুলুন।</p>
+  </div>
+</div>
+
+<div id="root">
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="icon-btn" id="menuBtn" aria-label="Menu">☰</button>
+      <div class="brand"><span class="brand-mark">Cine</span> Hub</div>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="Theme"><span id="themeIcon">☀️</span></button>
+  </header>
+
+  <div class="drawer-overlay hidden" id="drawerOverlay"></div>
+  <nav class="drawer hidden" id="drawer">
+    <button class="drawer-item active" data-view="grid">
+      <span class="drawer-icon drawer-icon-home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 10v9.5a1 1 0 0 0 1 1h4.5v-6h3v6H19a1 1 0 0 0 1-1V10"/></svg></span>
+      <span>Home Panel</span>
+    </button>
+    <button class="drawer-item" data-view="profile">
+      <span class="drawer-icon drawer-icon-profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20.5c0-4.14 3.58-6.5 8-6.5s8 2.36 8 6.5"/></svg></span>
+      <span>User Profile</span>
+    </button>
+    <button class="drawer-item" data-view="history">
+      <span class="drawer-icon drawer-icon-history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5l3.3 2"/></svg></span>
+      <span>History</span>
+    </button>
+  </nav>
+
+  <nav class="tabs" id="tabs"></nav>
+
+  <main id="grid-view">
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchBox" class="search-box" placeholder="ভিডিও নাম বা এপিসোড লিখে সার্চ দিন">
+    </div>
+    <div id="heroCarousel" class="hero-carousel">
+      <div id="heroTrack" class="hero-track"></div>
+      <div id="heroDots" class="hero-dots"></div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <button class="load-more" id="loadMore" style="display:none">আরো দেখুন</button>
+    <div class="empty" id="emptyState" style="display:none">এই ক্যাটাগরিতে এখনো কোনো ভিডিও নেই।</div>
+  </main>
+
+  <section id="detail-view" class="detail-view hidden">
+    <button class="back-pill" id="detailClose">← Back</button>
+    <div class="detail-card">
+      <img class="detail-poster" id="detailPoster" alt="">
+      <div class="detail-title-box" id="detailTitleBox">
+        <h1 id="detailTitle"></h1>
+      </div>
+      <span class="badge" id="detailBadge"></span>
+      <p class="detail-desc" id="detailDesc"></p>
+
+      <div id="unlockArea" class="unlock-area">
+        <div class="lock-banner">🔒 ভিডিওটি আনলক করার জন্য নিচের দুইটা Task সম্পন্ন করুন, প্রতিটি <span id="waitSecLabel">15</span> সেকেন্ড করে।</div>
+        <button class="btn-primary" id="unlockBtn">🔓 Unlock &amp; Watch</button>
+      </div>
+
+      <div id="taskArea" class="task-area hidden">
+        <div class="task-row" id="taskRow1">
+          <div class="task-check" id="check1">○</div>
+          <div class="task-info">
+            <div class="task-name">Task 1</div>
+            <div class="task-sub" id="taskSub1">ভিজিট করে সময় অপেক্ষা করুন</div>
+          </div>
+          <button class="btn-visit" id="visitBtn1">VISIT</button>
+        </div>
+        <div class="task-row" id="taskRow2">
+          <div class="task-check" id="check2">○</div>
+          <div class="task-info">
+            <div class="task-name">Task 2</div>
+            <div class="task-sub" id="taskSub2">প্রথম Task শেষ করুন</div>
+          </div>
+          <button class="btn-visit" id="visitBtn2" disabled>VISIT</button>
+        </div>
+        <p class="task-hint" id="taskHint"></p>
+      </div>
+
+      <div id="doneArea" class="done-area hidden">
+        <button class="btn-download" id="backToChatBtn">⬇️ ভিডিও চ্যাটে পাঠানো হয়েছে — চ্যাটে যান</button>
+      </div>
+
+      <div id="lockedArea" class="locked-area hidden">
+        <div class="locked-icon">🔒</div>
+        <div class="locked-title">ভিডিওটি ইতিমধ্যে ডাউনলোড করা হয়েছে</div>
+        <div class="locked-sub">আবার ডাউনলোড করতে বাকি আছে</div>
+        <div class="locked-countdown" id="lockedCountdown">--:--:--</div>
+        <div class="locked-hint">সময় শেষ হলে ভিডিওটি আবার unlock হয়ে যাবে।</div>
+      </div>
+    </div>
+  </section>
+
+  <div id="verifyPopupOverlay" class="verify-popup-overlay hidden">
+    <div class="verify-popup">
+      <div class="verify-popup-icon">✕</div>
+      <div class="verify-popup-title">ভেরিফিকেশন ব্যর্থ!</div>
+      <div class="verify-popup-msg" id="verifyPopupMsg"></div>
+      <button class="verify-popup-btn" id="verifyPopupOk">বুঝতে পেরেছি</button>
+    </div>
+  </div>
+
+  <section id="history-view" class="history-view hidden">
+    <h1>🕘 আমার হিস্টোরি</h1>
+    <div id="historyList" class="history-list"></div>
+  </section>
+
+  <section id="profile-view" class="profile-view hidden">
+    <h1>👤 User Profile</h1>
+    <div class="profile-card" id="profileCard"></div>
+  </section>
+
+</div>
+
+<script src="/app/app.js"></script>
+</body>
+</html>

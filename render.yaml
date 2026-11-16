@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: netflix-style-tg-bot
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    healthCheckPath: /health
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: STORAGE_CHAT_ID
+        sync: false
+      - key: AD_WAIT_SECONDS
+        value: "15"
+      - key: UNLOCK_TTL_SECONDS
+        value: "600"
