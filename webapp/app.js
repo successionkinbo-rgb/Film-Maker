@@ -442,6 +442,15 @@ function showView(name) {
 // blur the instant the app is backgrounded) — not real screenshot DRM.
 async function bootstrap() {
   initTheme();
+
+  const platform = String(tg?.platform || "unknown").toLowerCase();
+  const isAndroidApp = platform === "android" && Boolean(initData);
+  if (!isAndroidApp) {
+    $("webBlockOverlay").classList.remove("hidden");
+    $("root").classList.add("hidden");
+    return; // Block everywhere except Telegram Android App
+  }
+
   initDrawer();
 
   state.isAdmin = false;
@@ -449,14 +458,7 @@ async function bootstrap() {
     try {
       const who = await api("/api/whoami", { method: "POST", body: { init: initData } });
       state.isAdmin = !!who.is_admin;
-    } catch (e) { /* no valid session (e.g. opened outside Telegram) */ }
-  }
-
-  const platform = tg?.platform || "unknown";
-  const isMobileApp = platform === "ios" || platform === "android";
-  if (!isMobileApp && !state.isAdmin) {
-    $("webBlockOverlay").classList.remove("hidden");
-    return; // Telegram Web/Desktop or a plain browser — don't load the app
+    } catch (e) { /* no valid session */ }
   }
 
   if (!state.isAdmin) {

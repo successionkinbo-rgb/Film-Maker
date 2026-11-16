@@ -13,6 +13,7 @@ from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     ApplicationBuilder,
+    ChatMemberHandler,
     CommandHandler,
     CallbackQueryHandler,
     MessageHandler,
@@ -44,6 +45,43 @@ def is_admin(user_id):
     return user_id in config.ADMIN_IDS
 
 
+def get_storage_chat_id() -> int:
+    if config.STORAGE_CHAT_ID:
+        return int(config.STORAGE_CHAT_ID)
+    saved = db.get_setting("storage_chat_id")
+    if saved:
+        config.STORAGE_CHAT_ID = int(saved)
+        return config.STORAGE_CHAT_ID
+    return 0
+
+
+async def _register_storage_channel(chat, context: ContextTypes.DEFAULT_TYPE, notify_channel=True):
+    chat_id = chat.id
+    title = getattr(chat, "title", None) or str(chat_id)
+    config.STORAGE_CHAT_ID = int(chat_id)
+    db.set_setting("storage_chat_id", int(chat_id))
+    log.info("STORAGE_CHAT_ID detected and saved: %s (%s)", chat_id, title)
+    msg = (
+        f"✅ <b>Storage Channel Connected!</b>\n"
+        f"📌 Channel: <b>{title}</b>\n"
+        f"🆔 ID: <code>{chat_id}</code>"
+    )
+    if notify_channel:
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode=ParseMode.HTML)
+        except Exception as e:
+            log.warning("Could not send confirmation in channel %s: %s", chat_id, e)
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=msg + "\n\nএখন আপনি /addvideo দিয়ে ভিডিও আপলোড করতে পারবেন।",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception as e:
+            log.warning("Could not notify admin %s: %s", admin_id, e)
+
+
 def _fmt_hms(total_seconds):
     total_seconds = max(0, int(total_seconds))
     h, rem = divmod(total_seconds, 3600)
@@ -58,7 +96,13 @@ def _fmt_hms(total_seconds):
 # ================= USER SIDE =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    if chat and chat.type in ("channel", "supergroup", "group") and (update.channel_post or not update.effective_user):
+        await _register_storage_channel(chat, context, notify_channel=True)
+        return
     user = update.effective_user
+    if not user:
+        return
     db.upsert_user(user.id, user.username or user.first_name)
     webapp_url = config.get_webapp_url()
 
@@ -368,10 +412,11 @@ async def addvideo_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Ekta video file pathan.")
         return ADD_VIDEO
 
-    if not config.STORAGE_CHAT_ID:
+    storage_chat_id = get_storage_chat_id()
+    if not storage_chat_id:
         await update.message.reply_text(
-            "⚠️ STORAGE_CHAT_ID set kora nei config e. Ekta private channel toiri kore "
-            "bot ke admin banan, tarpor .env e channel id ta din."
+            "⚠️ STORAGE_CHAT_ID এখনো সেট হয়নি। আপনার Private Channel-এ গিয়ে `/start` অথবা যেকোনো মেসেজ লিখুন "
+            "(অথবা চ্যানেলের যেকোনো পোস্ট এখানে বটকে Forward করুন) — বট অটোমেটিক চ্যানেল আইডি নিয়ে নেবে!"
         )
         return ConversationHandler.END
 
@@ -383,7 +428,7 @@ async def addvideo_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # (for editing/deleting), and protect_content stops anyone in that group
     # from forwarding/saving it further.
     copied = await context.bot.copy_message(
-        chat_id=config.STORAGE_CHAT_ID,
+        chat_id=storage_chat_id,
         from_chat_id=update.effective_chat.id,
         message_id=update.message.message_id,
         caption=f"🎬 Video ID: {video_id}\n{nv['title']}",
@@ -397,7 +442,7 @@ async def addvideo_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         category=nv["category"],
         description=nv.get("description", ""),
         thumbnail_file_id=thumb_id,
-        storage_chat_id=config.STORAGE_CHAT_ID,
+        storage_chat_id=storage_chat_id,
         storage_message_id=copied.message_id,
         added_by=update.effective_user.id,
     )
@@ -507,16 +552,17 @@ async def editvideo_save_video(update: Update, context: ContextTypes.DEFAULT_TYP
     if not (update.message.video or update.message.document):
         await update.message.reply_text("Ekta video file pathan.")
         return EDIT_VIDEO
+    storage_chat_id = get_storage_chat_id()
     video_id = context.user_data["edit_video_id"]
     v = db.get_video(video_id)
     copied = await context.bot.copy_message(
-        chat_id=config.STORAGE_CHAT_ID,
+        chat_id=storage_chat_id,
         from_chat_id=update.effective_chat.id,
         message_id=update.message.message_id,
         caption=f"🎬 Video ID: {video_id}\n{v['title']}",
         protect_content=True,
     )
-    updates = {"storage_chat_id": config.STORAGE_CHAT_ID, "storage_message_id": copied.message_id}
+    updates = {"storage_chat_id": storage_chat_id, "storage_message_id": copied.message_id}
     if not v.get("thumbnail_file_id"):
         auto_thumb = _extract_auto_thumb(update.message)
         if auto_thumb:
@@ -593,13 +639,53 @@ async def chatid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     STORAGE_CHAT_ID from inside a private group/channel where the bot is a member.
     Works even while the bot is polling (unlike manually hitting getUpdates,
     which returns [] because the running bot already consumed the update)."""
-    if not is_admin(update.effective_user.id):
-        return
     chat = update.effective_chat
-    await update.message.reply_text(
-        f"📌 Chat: {chat.title or chat.type}\n🆔 ID: `{chat.id}`",
-        parse_mode=ParseMode.MARKDOWN,
-    )
+    if chat and chat.type in ("channel", "supergroup", "group") and (update.channel_post or not update.effective_user):
+        await _register_storage_channel(chat, context, notify_channel=True)
+        return
+    if update.effective_user and not is_admin(update.effective_user.id):
+        return
+    if chat and chat.type in ("channel", "supergroup", "group"):
+        await _register_storage_channel(chat, context, notify_channel=True)
+        return
+    msg = update.effective_message
+    if msg and chat:
+        await msg.reply_text(
+            f"📌 Chat: {chat.title or chat.type}\n🆔 ID: `{chat.id}`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+
+async def on_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    if chat and chat.type == "channel":
+        post = update.channel_post
+        text = (post.text or post.caption or "").strip() if post else ""
+        # Always save the channel ID when any post or /start or /chatid happens in the channel
+        already = get_storage_chat_id()
+        if already != chat.id or text.startswith("/start") or text.startswith("/chatid"):
+            await _register_storage_channel(chat, context, notify_channel=True)
+
+
+async def on_my_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    if chat and chat.type in ("channel", "supergroup", "group"):
+        new_status = update.my_chat_member.new_chat_member.status if update.my_chat_member else ""
+        if new_status in ("administrator", "member"):
+            await _register_storage_channel(chat, context, notify_channel=True)
+
+
+async def on_forwarded_from_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.effective_user or not is_admin(update.effective_user.id):
+        return
+    msg = update.message
+    if not msg:
+        return
+    f_chat = getattr(msg, "forward_from_chat", None)
+    if not f_chat and getattr(msg, "forward_origin", None):
+        f_chat = getattr(msg.forward_origin, "chat", None)
+    if f_chat and getattr(f_chat, "type", "") in ("channel", "supergroup"):
+        await _register_storage_channel(f_chat, context, notify_channel=False)
 
 
 async def delvideo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -633,6 +719,9 @@ def main():
     app.add_handler(CommandHandler("adstats", adstats))
     app.add_handler(CommandHandler("chatid", chatid))
     app.add_handler(CommandHandler("tutoriallink", tutoriallink))
+    app.add_handler(ChatMemberHandler(on_my_chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
+    app.add_handler(MessageHandler(filters.ChatType.CHANNEL, on_channel_post))
+    app.add_handler(MessageHandler(filters.FORWARDED & filters.ChatType.PRIVATE, on_forwarded_from_channel), group=1)
 
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^menu$"))
     app.add_handler(CallbackQueryHandler(show_category, pattern="^cat:"))
@@ -679,7 +768,7 @@ def main():
         try:
             log.info("Bot starting (polling)...")
             asyncio.set_event_loop(asyncio.new_event_loop())
-            app.run_polling(drop_pending_updates=True, close_loop=False)
+            app.run_polling(drop_pending_updates=False, close_loop=False)
             break  # run_polling returned normally (clean shutdown)
         except Conflict:
             log.warning(
